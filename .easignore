@@ -1,0 +1,9 @@
+.git
+.expo
+.vscode
+node_modules
+dist
+.tools
+android/.gradle
+android/build
+*.log

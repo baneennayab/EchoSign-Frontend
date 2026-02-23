@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "SingLanguage",
+    "name": "EchoSign",
     "slug": "SingLanguage",
-    "version": "1.0.0",
+    "version": "ES26",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,15 +20,26 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.chat201.SingLanguage"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "updates": {
+      "url": "https://u.expo.dev/224f8004-73f7-43b0-a211-69dbc3e75d56",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": "ES26",
+    "plugins": [
+      "expo-updates"
+    ],
     "extra": {
       "eas": {
-        "projectId": "4a21f332-2f92-47b8-81b8-ec171cfd99ee"
+        "projectId": "224f8004-73f7-43b0-a211-69dbc3e75d56"
       }
-    }
+    },
+    "owner": "aqee"
   }
 }

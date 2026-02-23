@@ -1,45 +1,60 @@
-// EchoSign - Premium Mobile App
-// Professional Design for Narjis Khatoon Organization
-// Enhanced Theme System + Glassmorphism + Micro-interactions
+// EchoSign - Premium Assistive Technology App
+// Final Polished Version for Narjis Khatoon Organization
+// Optimized UX, Functional Settings, and Enhanced Video Controls
 
 import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
 import {
   View, Text, TextInput, ActivityIndicator, Alert,
-  ScrollView, TouchableOpacity, Animated,
-  StatusBar, StyleSheet, Dimensions, Switch, Platform
+  ScrollView, TouchableOpacity, Animated, Appearance, useColorScheme,
+  StatusBar, StyleSheet, Dimensions, Switch, Platform,
+  Modal, Keyboard, KeyboardAvoidingView, LayoutAnimation,
+  PanResponder
 } from 'react-native';
 import { Video, Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider, useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
+const THEME_FILE = `${FileSystem.documentDirectory}theme_preference.json`;
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { themes, spacing, borderRadius, typography } from './themes';
-import { BACKEND_URL, API, APP_CONFIG } from './config/env';
+import { API, APP_CONFIG } from './config/env';
+import * as Updates from 'expo-updates';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// ========== THEME CONTEXT ==========
-const ThemeContext = createContext();
-export const useTheme = () => useContext(ThemeContext);
+// ========== TEXT REFINERY LOGIC ==========
 
-// ========== COMPONENTS ==========
+const PROPER_NOUNS = [
+  'pakistan', 'karachi', 'lahore', 'islamabad', 'quaid e azam', 'allama iqbal',
+  'narjis khatoon', 'faisal mosque', 'minar e pakistan', 'mazar e quaid',
+  'ali', 'ahmed', 'hassan', 'fatima', 'zainab', 'maryam', 'sarah', 'john'
+];
 
-const GradientHeader = ({ children, style }) => {
-  const { theme } = useTheme();
-  return (
-    <LinearGradient
-      colors={theme.gradientPrimary}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.gradientHeader, style]}
-    >
-      {children}
-    </LinearGradient>
-  );
+const refineTranscription = (text) => {
+  if (!text) return "";
+  let refined = text.trim();
+  refined = refined.charAt(0).toUpperCase() + refined.slice(1);
+
+  PROPER_NOUNS.forEach(noun => {
+    const regex = new RegExp(`\\b${noun}\\b`, 'gi');
+    refined = refined.replace(regex, match => {
+      return match.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+    });
+  });
+
+  if (!/[.!?]$/.test(refined)) refined += ".";
+  return refined;
 };
 
+// ========== CONTEXT & STATE ==========
+const AppContext = createContext();
+export const useApp = () => useContext(AppContext);
+
+// ========== PREMIUM COMPONENTS ==========
+
 const GlassCard = ({ children, style, padding = 20 }) => {
-  const { theme } = useTheme();
+  const { theme } = useApp();
   return (
     <View style={[
       styles.glassCard,
@@ -51,495 +66,802 @@ const GlassCard = ({ children, style, padding = 20 }) => {
   );
 };
 
-const Header = ({ title, showThemeToggle = true }) => {
-  const { theme, isDark, toggleTheme } = useTheme();
+const PremiumButton = ({ onPress, title, icon, color, style, loading, disabled, small }) => {
+  const { theme } = useApp();
   return (
-    <View style={styles.header}>
-      <View>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Echo<Text style={{ color: theme.primary }}>Sign</Text>
-        </Text>
-        <Text style={[styles.headerSubtitle, { color: theme.subtext }]}>
-          {title || APP_CONFIG.organization}
-        </Text>
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={loading || disabled}
+      activeOpacity={0.7}
+      style={[
+        styles.premiumBtn,
+        { backgroundColor: color || theme.primary, opacity: (loading || disabled) ? 0.6 : 1, height: small ? 44 : 60 },
+        style
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <View style={styles.btnContent}>
+          {icon && <Ionicons name={icon} size={small ? 16 : 20} color="#fff" style={styles.btnIcon} />}
+          <Text style={[styles.btnText, { fontSize: small ? 14 : 16 }]}>{title}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+const PremiumModal = ({ visible, title, message, type, onClose }) => {
+  const { theme } = useApp();
+  const alertIcon = type === 'error' ? 'alert-circle' : type === 'success' ? 'checkmark-circle' : 'information-circle';
+  const alertColor = type === 'error' ? theme.error : type === 'success' ? '#10b981' : theme.primary;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBackdrop} />
+        <Animated.View style={[styles.modalContent, { backgroundColor: theme.surfaceSolid, borderColor: theme.glassBorder }]}>
+          <LinearGradient
+            colors={[alertColor + '20', 'transparent']}
+            style={styles.modalHeaderGrad}
+          />
+          <View style={[styles.modalIconBox, { backgroundColor: alertColor + '15' }]}>
+            <Ionicons name={alertIcon} size={42} color={alertColor} />
+          </View>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>{title}</Text>
+          <Text style={[styles.modalMessage, { color: theme.subtext }]}>{message}</Text>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.8}
+            style={[styles.modalBtn, { backgroundColor: alertColor }]}
+          >
+            <LinearGradient
+              colors={['rgba(255,255,255,0.2)', 'transparent']}
+              style={StyleSheet.absoluteFill}
+            />
+            <Text style={styles.modalBtnText}>Understood</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
-      {showThemeToggle && (
+    </Modal>
+  );
+};
+
+const StatusModal = ({ visible, title, message, type, onClose, theme, isDark }) => (
+  <Modal transparent visible={visible} animationType="fade">
+    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+      <View style={{
+        width: '90%',
+        backgroundColor: isDark ? '#2a2a2a' : '#fff',
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: theme.glassBorder,
+        elevation: 10,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6.68,
+      }}>
+        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: type === 'success' ? '#10b98120' : '#3b82f620', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+          <Ionicons
+            name={type === 'success' ? "checkmark-circle" : "information-circle"}
+            size={36}
+            color={type === 'success' ? '#10b981' : '#3b82f6'}
+          />
+        </View>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: theme.text, marginBottom: 12, textAlign: 'center' }}>{title}</Text>
+        <Text style={{ fontSize: 15, color: theme.subtext, textAlign: 'center', lineHeight: 22, marginBottom: 26, paddingHorizontal: 10 }}>{message}</Text>
         <TouchableOpacity
-          onPress={toggleTheme}
-          style={[styles.themeToggle, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
-          accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          onPress={onClose}
+          style={{ backgroundColor: theme.primary, paddingVertical: 14, paddingHorizontal: 40, borderRadius: 14, width: '100%', alignItems: 'center' }}
         >
-          <Ionicons name={isDark ? "moon" : "sunny"} size={20} color={isDark ? theme.primary : "#f59e0b"} />
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Got it</Text>
         </TouchableOpacity>
+      </View>
+    </View>
+  </Modal>
+);
+
+const SoftwareUpdateComponent = ({ theme, isDark }) => {
+  const {
+    isUpdateAvailable,
+    isUpdatePending,
+    isDownloading,
+    isChecking,
+    lastCheckForUpdateTime
+  } = Updates.useUpdates();
+
+  const [modal, setModal] = React.useState({ visible: false, title: '', message: '', type: 'info' });
+
+  const handleSilentAutoUpdate = React.useCallback(async () => {
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+      }
+    } catch (e) {
+      // Silent fail for background update check.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    handleSilentAutoUpdate();
+  }, [handleSilentAutoUpdate]);
+
+  const handleCheckUpdate = async () => {
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+      } else {
+        setModal({
+          visible: true,
+          title: "System Up to Date",
+          message: "You are currently running the latest professional version of EchoSign. No new updates available at this time.",
+          type: 'success'
+        });
+      }
+    } catch (e) {
+      setModal({
+        visible: true,
+        title: "Connection Issue",
+        message: "We couldn't reach the update server. Please check your internet connection and try again.",
+        type: 'info'
+      });
+    }
+  };
+
+  return (
+    <View style={styles.aboutRow}>
+      <StatusModal
+        visible={modal.visible}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        theme={theme}
+        isDark={isDark}
+        onClose={() => setModal({ ...modal, visible: false })}
+      />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={[styles.aboutTitle, { color: theme.primary }]}>Update Status</Text>
+        {isChecking && <ActivityIndicator size="small" color={theme.primary} />}
+      </View>
+
+      {isUpdatePending ? (
+        <View>
+          <Text style={[styles.aboutText, { color: '#10b981', fontWeight: 'bold', marginBottom: 10 }]}>
+            ✨ A new version is ready to install!
+          </Text>
+          <TouchableOpacity
+            onPress={() => Updates.reloadAsync()}
+            style={{ backgroundColor: '#10b981', padding: 12, borderRadius: 12, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '800' }}>Restart to Apply Update</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isDownloading ? (
+        <View>
+          <Text style={[styles.aboutText, { color: theme.primary }]}>⏬ Downloading latest features...</Text>
+          <View style={{ height: 4, backgroundColor: theme.glass, borderRadius: 2, overflow: 'hidden', marginTop: 8 }}>
+            <View style={{ height: '100%', width: '60%', backgroundColor: theme.primary }} />
+          </View>
+        </View>
+      ) : (
+        <View>
+          <Text style={[styles.aboutText, { color: theme.subtext, marginBottom: 10 }]}>
+            Your app is currently up to date.
+          </Text>
+          <TouchableOpacity
+            onPress={handleCheckUpdate}
+            style={{ borderColor: theme.glassBorder, borderWidth: 1, padding: 10, borderRadius: 12, alignItems: 'center', backgroundColor: theme.glass }}
+          >
+            <Text style={{ color: theme.text, fontSize: 13 }}>Check for Updates</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
 };
 
-const AnimatedRecordButton = ({ isRecording, onPress }) => {
-  const { theme } = useTheme();
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (isRecording) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.2, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [isRecording]);
+const Header = () => {
+  const { theme, isDark, setIsDark } = useApp();
 
   return (
-    <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-      <TouchableOpacity
-        onPress={onPress}
-        style={[styles.recordBtn, { backgroundColor: isRecording ? theme.error : theme.primary + '15' }]}
-        accessibilityLabel={isRecording ? "Stop recording" : "Start voice recording"}
-      >
-        <Ionicons name={isRecording ? "stop" : "mic"} size={28} color={isRecording ? "#fff" : theme.primary} />
+    <View style={styles.header}>
+      <View>
+        <Text style={[styles.brandText, { color: theme.text }]}>
+          Echo<Text style={{ color: theme.primary }}>Sign</Text>
+        </Text>
+        <Text style={[styles.orgText, { color: theme.subtext }]}>{APP_CONFIG.organization}</Text>
+      </View>
+      <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.iconCircle, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}>
+        <Ionicons name={isDark ? "sunny" : "moon"} size={22} color={isDark ? "#fbbf24" : theme.primary} />
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 };
 
-const VideoPlayerComponent = ({ videoList, currentIndex, isPlaying, onEnd, onNext, onIndexChange }) => {
-  const { theme } = useTheme();
+const CustomSeekBar = ({ position, duration, onSeek }) => {
+  const { theme } = useApp();
+  const [barWidth, setBarWidth] = useState(0);
+  const progress = duration > 0 ? (position / duration) * 100 : 0;
+
+  const handleSeek = (evt) => {
+    if (duration <= 0 || barWidth <= 0) return;
+    const { locationX } = evt.nativeEvent;
+    const seekPosition = Math.max(0, Math.min(duration, (locationX / barWidth) * duration));
+    onSeek(seekPosition);
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => handleSeek(evt),
+      onPanResponderMove: (evt) => handleSeek(evt),
+      onPanResponderRelease: (evt) => handleSeek(evt),
+    })
+  ).current;
+
+  return (
+    <View
+      style={styles.seekContainer}
+      {...panResponder.panHandlers}
+      onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+    >
+      <View style={[styles.seekBackground, { backgroundColor: theme.muted + '30' }]}>
+        <View style={[styles.seekFill, { width: `${progress}%`, backgroundColor: theme.primary }]} />
+      </View>
+      <View style={styles.seekHandleRow}>
+        <Text style={[styles.seekTime, { color: theme.subtext }]}>{Math.floor(position / 1000)}s</Text>
+        <Text style={[styles.seekTime, { color: theme.subtext }]}>{Math.floor(duration / 1000)}s</Text>
+      </View>
+    </View>
+  );
+};
+
+const SignVideoPlayer = ({ videos, index, isPlaying, onEnd, onNext, onPrev, onPause, isPaused }) => {
+  const { theme, deafMode } = useApp();
   const videoRef = useRef(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [playbackStatus, setPlaybackStatus] = useState(null);
 
   useEffect(() => {
-    if (!isPlaying || videoList.length === 0) return;
-    loadVideo();
-  }, [currentIndex, videoList, isPlaying]);
+    if (isPlaying && videos.length > 0) loadVideo();
+  }, [index, videos, isPlaying]);
+
+  useEffect(() => {
+    if (isPaused) videoRef.current?.pauseAsync();
+    else videoRef.current?.playAsync();
+  }, [isPaused]);
 
   const loadVideo = async () => {
     try {
       await videoRef.current?.unloadAsync();
-      await videoRef.current?.loadAsync({ uri: videoList[currentIndex].url }, { shouldPlay: true });
-      setIsPaused(false);
+      await videoRef.current?.loadAsync({ uri: videos[index].uri }, { shouldPlay: !isPaused });
     } catch (e) { onEnd(); }
   };
 
-  const togglePlayPause = async () => {
-    if (isPaused) {
-      await videoRef.current?.playAsync();
-    } else {
-      await videoRef.current?.pauseAsync();
-    }
-    setIsPaused(!isPaused);
-  };
-
-  if (!isPlaying || videoList.length === 0) {
+  if (!isPlaying || videos.length === 0) {
     return (
-      <View style={[styles.videoPlaceholder, { borderColor: theme.border, backgroundColor: theme.glass }]}>
-        <LinearGradient colors={theme.gradientDark} style={StyleSheet.absoluteFill} />
-        <View style={[styles.playIcon, { backgroundColor: theme.primary + '20' }]}>
-          <Ionicons name="videocam-outline" size={44} color={theme.primary} />
-        </View>
-        <Text style={[styles.placeholderText, { color: theme.subtext }]}>Translation will appear here</Text>
+      <View style={[styles.playerPlaceholder, { backgroundColor: theme.glass, borderColor: theme.glassBorder, height: 220 }]}>
+        <MaterialCommunityIcons name="gesture-double-tap" size={64} color={theme.primary + '30'} />
+        <Text style={[styles.placeholderSub, { color: theme.subtext }]}>Your interpretation will appear here</Text>
       </View>
     );
   }
 
-  const currentItem = videoList[currentIndex];
+  const current = videos[index];
 
   return (
-    <View>
-      <View style={[styles.videoContainer, { borderColor: theme.primary }]}>
+    <View style={styles.playerContainer}>
+      <View style={[styles.videoFrame, { borderColor: theme.primary }]}>
         <Video
           ref={videoRef}
-          source={{ uri: currentItem.url }}
-          style={styles.video}
+          source={{ uri: current.uri }}
+          style={styles.fullVideo}
           resizeMode="contain"
-          useNativeControls={false}
-          onPlaybackStatusUpdate={s => { if (s.didJustFinish) onEnd(); }}
+          isLooping
+          onPlaybackStatusUpdate={status => {
+            setPlaybackStatus(status);
+            if (status.didJustFinish && !status.isLooping) onEnd();
+          }}
         />
+        <View style={[styles.videoOverlay, deafMode && { padding: 15 }]}>
+          <Text style={[styles.overlayType, deafMode && { fontSize: 12 }]}>{current.type.toUpperCase()}</Text>
+          <Text style={[styles.overlayWord, deafMode && { fontSize: 24 }]}>{current.word}</Text>
+        </View>
       </View>
 
-      {/* Enhanced Control Bar */}
-      <GlassCard style={styles.controlBar} padding={14}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.videoType, { color: theme.primary }]}>
-            {currentItem.type === 'word' ? '📖 WORD' : '🔤 LETTER'}
-          </Text>
-          <Text style={[styles.videoWord, { color: theme.text }]} numberOfLines={1}>{currentItem.word}</Text>
-        </View>
-
-        <View style={styles.controlBtns}>
-          <TouchableOpacity
-            onPress={() => currentIndex > 0 && onIndexChange?.(currentIndex - 1)}
-            disabled={currentIndex === 0}
-            style={styles.controlBtn}
-          >
-            <Ionicons name="play-skip-back" size={18} color={currentIndex === 0 ? theme.muted : theme.text} />
+      <GlassCard style={styles.playerControls} padding={12}>
+        <View style={styles.controlsRow}>
+          <TouchableOpacity onPress={onPrev} disabled={index === 0} style={styles.ctrlBtn}>
+            <Ionicons name="play-skip-back" size={24} color={index === 0 ? theme.muted : theme.text} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={togglePlayPause} style={[styles.playPauseBtn, { backgroundColor: theme.primary }]}>
-            <Ionicons name={isPaused ? "play" : "pause"} size={20} color="#fff" />
+          <TouchableOpacity onPress={() => videoRef.current?.setPositionAsync(Math.max(0, (playbackStatus?.positionMillis || 0) - 5000))} style={styles.ctrlBtn}>
+            <Ionicons name="reload" size={20} color={theme.text} style={{ transform: [{ scaleX: -1 }] }} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={onNext}
-            disabled={currentIndex >= videoList.length - 1}
-            style={styles.controlBtn}
-          >
-            <Ionicons name="play-skip-forward" size={18} color={currentIndex >= videoList.length - 1 ? theme.muted : theme.text} />
+          <TouchableOpacity onPress={onPause} style={[styles.centralPlayBtn, { backgroundColor: theme.primary }]}>
+            <Ionicons name={isPaused ? "play" : "pause"} size={28} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => videoRef.current?.setPositionAsync((playbackStatus?.positionMillis || 0) + 5000)} style={styles.ctrlBtn}>
+            <Ionicons name="reload" size={20} color={theme.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onNext} disabled={index >= videos.length - 1} style={styles.ctrlBtn}>
+            <Ionicons name="play-skip-forward" size={24} color={index >= videos.length - 1 ? theme.muted : theme.text} />
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.videoCount, { color: theme.subtext }]}>{currentIndex + 1}/{videoList.length}</Text>
+        <CustomSeekBar
+          position={playbackStatus?.positionMillis || 0}
+          duration={playbackStatus?.durationMillis || 0}
+          onSeek={(pos) => videoRef.current?.setPositionAsync(pos)}
+        />
+
+        <View style={styles.counterBox}>
+          <Text style={[styles.counterText, { color: theme.subtext }]}>{index + 1} of {videos.length}</Text>
+        </View>
       </GlassCard>
     </View>
   );
 };
 
-// ========== SCREENS ==========
+// ========== NETWORK INDICATOR ==========
+
+const NetworkIndicator = () => {
+  const { theme } = useApp();
+  const [status, setStatus] = useState('online'); // 'online', 'slow', 'offline'
+
+  useEffect(() => {
+    const checkConnection = async () => {
+      const start = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
+      try {
+        const res = await fetch(API.health, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const latency = Date.now() - start;
+
+        if (res.ok) {
+          if (latency > 3000) {
+            setStatus('slow');
+          } else {
+            setStatus('online');
+          }
+        } else {
+          setStatus('offline');
+        }
+      } catch (e) {
+        clearTimeout(timeout);
+        setStatus('offline');
+      }
+    };
+
+    checkConnection();
+    const timer = setInterval(checkConnection, 15000); // Check every 15 seconds
+    return () => clearInterval(timer);
+  }, []);
+
+  // Only show banner if there's an issue
+  if (status === 'online') return null;
+
+  return (
+    <View style={[styles.networkBanner, {
+      backgroundColor: status === 'slow' ? '#f59e0b' : '#ef4444'
+    }]}>
+      <Ionicons
+        name={status === 'slow' ? "wifi" : "cloud-offline"}
+        size={14}
+        color="#fff"
+      />
+      <Text style={styles.networkText}>
+        {status === 'slow' ? "Slow Connection" : "No Internet"}
+      </Text>
+    </View>
+  );
+};
 
 function HomeScreen() {
-  const { theme } = useTheme();
+  const { theme, deafMode } = useApp();
   const insets = useSafeAreaInsets();
 
   const [text, setText] = useState('');
-  const [transcribed, setTranscribed] = useState('');
+  const [refinedText, setRefinedText] = useState('');
   const [videos, setVideos] = useState([]);
-  const [currentVid, setCurrentVid] = useState(0);
-  const [status, setStatus] = useState('Ready');
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [status, setStatus] = useState('Ready');
+  const [statusType, setStatusType] = useState('info'); // info, success, error, warning
   const [keywords, setKeywords] = useState([]);
-  const [favorites, setFavorites] = useState(['Hello', 'Thank You', 'Welcome']);
 
-  const startRec = async () => {
+  const recordingRef = useRef(null);
+
+  const startRecording = async () => {
     try {
-      if (recording) return;
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: rec } = await Audio.Recording.createAsync({
-        android: { extension: '.wav', ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android },
-        ios: { extension: '.wav', ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios, outputFormat: Audio.IOSOutputFormat.LINEARPCM },
-        web: {},
-      });
+      // CLEANUP PREVIOUS RECORDING IF CRASHED
+      if (recordingRef.current) {
+        try {
+          await recordingRef.current.stopAndUnloadAsync();
+        } catch (e) { }
+        recordingRef.current = null;
+      }
+
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) return Alert.alert('Permission Denied', 'Mic access is required.');
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true, staysActiveInBackground: false, shouldDuckAndroid: true });
+
+      const recordingOptions = {
+        android: { extension: '.wav', outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT, audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT, sampleRate: 44100, numberOfChannels: 1, bitRate: 128000 },
+        ios: { extension: '.wav', audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH, sampleRate: 44100, numberOfChannels: 1, bitRate: 128000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
+      };
+
+      const { recording: rec } = await Audio.Recording.createAsync(recordingOptions);
+      recordingRef.current = rec;
       setRecording(rec);
       setStatus('🎙️ Listening...');
     } catch (e) { Alert.alert('Error', e.message); }
   };
 
-  const stopRec = async () => {
-    if (!recording) return;
-    setStatus('⏳ Processing...');
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecording(null);
-    handleTranslate('', uri);
+  const stopRecording = async () => {
+    const rec = recordingRef.current;
+    if (!rec) return;
+    setStatus('⌛ Analyzing...');
+    try {
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      setRecording(null);
+      recordingRef.current = null;
+      handleTranslate('', uri);
+    } catch (e) {
+      setRecording(null);
+      recordingRef.current = null;
+      setStatus('Ready');
+    }
   };
 
-  const handleTranslate = async (txtStr, audioUri) => {
+  const toggleRecording = () => {
+    if (recording) stopRecording();
+    else startRecording();
+  };
+
+  const handleTranslate = async (inputStr, audioUri) => {
     setLoading(true);
     setStatus('🔄 Translating...');
+    setStatusType('info');
     const formData = new FormData();
-    if (txtStr) formData.append('sentence', txtStr);
+    if (inputStr) formData.append('sentence', inputStr);
     if (audioUri) formData.append('audio', { uri: audioUri, name: 'recording.wav', type: 'audio/wav' });
 
     try {
-      const res = await fetch(API.translate, { method: 'POST', body: formData });
+      const res = await fetch(API.translate, { method: 'POST', body: formData, headers: { Accept: 'application/json' } });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      setTranscribed(data.transcribed_text || txtStr);
-      setVideos(data.videos || []);
-      setKeywords([...new Set((data.videos || []).filter(v => v.type === 'word').map(v => v.word))]);
+      const rawText = data.transcribed_text || inputStr;
+      const refined = refineTranscription(rawText);
+      setRefinedText(refined);
 
-      if (data.videos?.length > 0) {
-        setCurrentVid(0);
+      const mappedVideos = (data.videos || []).map(v => ({ word: v.word, uri: v.url, type: v.type || 'word' }));
+      setVideos(mappedVideos);
+      setKeywords(data.keywords || []);
+
+      if (mappedVideos.length > 0) {
+        setCurrentIndex(0);
         setIsPlaying(true);
-        setStatus(`▶️ Playing: ${data.videos[0].word}`);
+        setIsPaused(false);
+        setStatus('✅ Interpretation Ready');
+        setStatusType('success');
       } else {
-        setStatus('❌ No signs found');
+        setStatus('❌ No Signs in Dictionary');
+        setStatusType('warning');
+        showAlert('System Notice', 'No specific signs found for this input. Trying finger-spelling fallback.', 'info');
       }
     } catch (e) {
-      Alert.alert("Translation Failed", e.message);
-      setStatus('❌ Failed');
+      // Alert.alert('System Error', e.message);
+      setStatus(`❌ ${e.message}`);
+      setStatusType('error');
+      showAlert('System Error', e.message, 'error');
     } finally {
       setLoading(false);
       setText('');
+      Keyboard.dismiss();
     }
   };
 
-  const handleVideoEnd = () => {
-    if (currentVid < videos.length - 1) {
-      setCurrentVid(prev => prev + 1);
-      setStatus(`▶️ Playing: ${videos[currentVid + 1].word}`);
-    } else {
-      setIsPlaying(false);
-      setStatus('✅ Complete');
-    }
-  };
-
-  const handleNextVideo = () => {
-    if (currentVid < videos.length - 1) {
-      setCurrentVid(currentVid + 1);
-      setStatus(`▶️ Playing: ${videos[currentVid + 1].word}`);
-    }
-  };
-
-  const handleKeywordClick = (word) => {
-    const idx = videos.findIndex(v => v.word.toLowerCase() === word.toLowerCase() && v.type === 'word');
-    if (idx !== -1) {
-      setCurrentVid(idx);
-      setIsPlaying(true);
-      setStatus(`▶️ Playing: ${videos[idx].word}`);
-    }
-  };
-
-  // Clear/Stop playback
-  const clearPlayback = () => {
-    setIsPlaying(false);
+  const clearAll = () => {
     setVideos([]);
-    setCurrentVid(0);
+    setIsPlaying(false);
+    setRefinedText('');
     setKeywords([]);
-    setTranscribed('');
     setStatus('Ready');
+    setStatusType('info');
+    setText('');
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 10 }]}
-      showsVerticalScrollIndicator={false}
-    >
-      <Header />
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.mainScroll} showsVerticalScrollIndicator={false}>
 
-      {/* Video Section */}
-      <View style={styles.section}>
-        <VideoPlayerComponent
-          videoList={videos}
-          currentIndex={currentVid}
+        <SignVideoPlayer
+          videos={videos}
+          index={currentIndex}
           isPlaying={isPlaying}
-          onEnd={handleVideoEnd}
-          onNext={handleNextVideo}
-          onIndexChange={setCurrentVid}
+          isPaused={isPaused}
+          onEnd={() => currentIndex < videos.length - 1 ? setCurrentIndex(currentIndex + 1) : setIsPlaying(false)}
+          onNext={() => setCurrentIndex(prev => Math.min(videos.length - 1, prev + 1))}
+          onPrev={() => setCurrentIndex(prev => Math.max(0, prev - 1))}
+          onPause={() => setIsPaused(!isPaused)}
         />
-      </View>
 
-      {/* Status Bar with Clear Button */}
-      <GlassCard style={styles.statusBarCard} padding={14}>
-        <View style={[styles.statusDot, { backgroundColor: recording ? theme.error : loading ? '#facc15' : theme.secondary }]} />
-        <Text style={[styles.statusText, { color: theme.text, flex: 1 }]}>{status}</Text>
-        {(isPlaying || videos.length > 0) && (
-          <TouchableOpacity
-            onPress={clearPlayback}
-            style={[styles.clearBtn, { backgroundColor: theme.error + '15' }]}
-            accessibilityLabel="Clear and stop playback"
-          >
-            <Ionicons name="close-circle" size={18} color={theme.error} />
-            <Text style={[styles.clearBtnText, { color: theme.error }]}>Clear</Text>
-          </TouchableOpacity>
+        {/* Improved Spacing */}
+        <View style={{ height: 20 }} />
+
+        {/* Refined Results Display */}
+        {(refinedText || keywords.length > 0) ? (
+          <GlassCard style={styles.resultsCard}>
+            {refinedText && (
+              <View style={styles.sentenceBox}>
+                <Text style={[styles.label, { color: theme.primary }]}>TRANSLATED TEXT</Text>
+                <Text style={[styles.sentenceText, { color: theme.text, fontSize: deafMode ? 22 : 18 }]}>{refinedText}</Text>
+              </View>
+            )}
+
+            {keywords.length > 0 && (
+              <View style={styles.keywordBox}>
+                <Text style={[styles.label, { color: theme.primary }]}>EXTRACTED SIGNS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.keywordScroll}>
+                  {keywords.map((k, i) => (
+                    <TouchableOpacity key={i} style={[styles.keywordChip, { backgroundColor: theme.primary + '10', borderColor: theme.primary }]}
+                      onPress={() => {
+                        const idx = videos.findIndex(v => v.word.toLowerCase() === k.toLowerCase());
+                        if (idx !== -1) { setCurrentIndex(idx); setIsPlaying(true); setIsPaused(false); }
+                      }}
+                    >
+                      <Text style={[styles.keywordChipText, { color: theme.primary }]}>{k}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            <PremiumButton title="Clear Results" icon="trash" color={theme.error + '20'} small style={{ marginTop: 15 }} onPress={clearAll} />
+          </GlassCard>
+        ) : (
+          <GlassCard style={{ marginHorizontal: 20, padding: 15, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: statusType === 'error' ? theme.error : statusType === 'success' ? theme.primary : theme.glassBorder }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Ionicons
+                name={statusType === 'success' ? 'checkmark-circle' : statusType === 'error' ? 'alert-circle' : statusType === 'warning' ? 'warning' : 'information-circle'}
+                size={20}
+                color={statusType === 'error' ? theme.error : statusType === 'success' ? theme.primary : statusType === 'warning' ? '#f59e0b' : theme.subtext}
+              />
+              <Text style={[styles.statusBadgeText, { color: statusType === 'error' ? theme.error : theme.text, fontWeight: '700' }]}>{status}</Text>
+            </View>
+          </GlassCard>
         )}
-      </GlassCard>
 
-      {/* Keywords */}
-      {keywords.length > 0 && (
-        <ScrollView horizontal style={styles.keywordRow} showsHorizontalScrollIndicator={false}>
-          {keywords.map((k, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => handleKeywordClick(k)}
-              style={[styles.chip, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
-            >
-              <Text style={[styles.chipText, { color: theme.primary }]}>{k}</Text>
+        <View style={{ height: 20 }} />
+
+        <GlassCard style={styles.inputCard}>
+          <Text style={[styles.label, { color: theme.subtext, marginBottom: 12 }]}>VOICE OR TEXT INPUT</Text>
+          <TextInput
+            style={[styles.premiumInput, { color: theme.text, backgroundColor: theme.input, borderColor: theme.glassBorder, fontSize: deafMode ? 18 : 16 }]}
+            placeholder="Type anything here..."
+            placeholderTextColor={theme.muted}
+            multiline
+            value={text}
+            onChangeText={setText}
+          />
+          <View style={styles.inputRow}>
+            <TouchableOpacity onPress={toggleRecording} activeOpacity={0.6}
+              style={[styles.micBtn, { backgroundColor: recording ? theme.error : theme.primary + '20' }]}>
+              <Ionicons name={recording ? "stop" : "mic-outline"} size={32} color={recording ? "#fff" : theme.primary} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
 
-      {/* Favorites Section */}
-      {favorites.length > 0 && !isPlaying && (
-        <View style={styles.favSection}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>⭐ Quick Words</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {favorites.map((word, i) => (
-              <TouchableOpacity
-                key={i}
-                onPress={() => handleTranslate(word, null)}
-                style={[styles.favChip, { backgroundColor: theme.secondary + '15', borderColor: theme.secondary }]}
-              >
-                <Text style={[styles.favText, { color: theme.secondary }]}>{word}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Transcription */}
-      {transcribed && (
-        <GlassCard style={styles.transcriptionCard}>
-          <Text style={[styles.cardLabel, { color: theme.subtext }]}>TRANSCRIPTION</Text>
-          <Text style={[styles.cardText, { color: theme.text }]}>{transcribed}</Text>
+            <PremiumButton title="Interpret" icon="paper-plane" loading={loading} disabled={!text.trim() || !!recording} onPress={() => handleTranslate(text, null)} style={{ flex: 1 }} />
+          </View>
         </GlassCard>
-      )}
-
-      {/* Input Area */}
-      <GlassCard style={styles.inputContainer}>
-        <TextInput
-          style={[styles.input, { color: theme.text, backgroundColor: theme.input, borderColor: theme.inputBorder }]}
-          placeholder="Type or use voice..."
-          placeholderTextColor={theme.muted}
-          value={text}
-          onChangeText={setText}
-          multiline
-        />
-        <View style={styles.inputRow}>
-          <AnimatedRecordButton isRecording={!!recording} onPress={recording ? stopRec : startRec} />
-          <TouchableOpacity
-            onPress={() => handleTranslate(text, null)}
-            disabled={!text.trim() || loading}
-            style={[styles.mainBtn, { backgroundColor: theme.primary, opacity: (!text.trim() || loading) ? 0.5 : 1 }]}
-          >
-            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainBtnText}>Translate</Text>}
-            <Ionicons name="arrow-forward" size={18} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-      </GlassCard>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
-function UploadScreen() {
-  const { theme } = useTheme();
+function ContributeScreen() {
+  const { theme, showAlert } = useApp();
   const insets = useSafeAreaInsets();
   const [word, setWord] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState('Contributor Mode');
+  const [statusType, setStatusType] = useState('info');
 
-  const pickAndUpload = async () => {
-    if (!word.trim()) return Alert.alert('Required', 'Please enter the word first');
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos });
-    if (res.canceled) return;
+  const handleUpload = async () => {
+    if (!word.trim()) return showAlert('Missing Info', 'Please enter a name for the sign.', 'error');
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos });
+    if (result.canceled) return;
 
-    setLoading(true);
-    setProgress(0);
-
-    // Simulated progress
-    const interval = setInterval(() => setProgress(p => Math.min(p + 10, 90)), 200);
-
+    setUploading(true);
     const data = new FormData();
-    data.append('name', word);
-    data.append('file', { uri: res.assets[0].uri, name: 'upload.mp4', type: 'video/mp4' });
+    data.append('name', word.trim());
+    data.append('file', { uri: result.assets[0].uri, name: 'upload.mp4', type: 'video/mp4' });
 
     try {
-      const resp = await fetch(API.upload, { method: 'POST', body: data });
-      clearInterval(interval);
-      setProgress(100);
-      if (resp.ok) {
-        setTimeout(() => {
-          Alert.alert('✅ Success', 'Video uploaded for review');
-          setWord('');
-          setProgress(0);
-        }, 500);
-      } else throw new Error();
-    } catch {
-      clearInterval(interval);
-      Alert.alert('❌ Error', 'Upload failed');
-      setProgress(0);
-    } finally {
-      setLoading(false);
-    }
+      const res = await fetch(API.upload, { method: 'POST', body: data });
+      const responseData = await res.json();
+
+      if (!res.ok) {
+        throw new Error(responseData.detail || responseData.message || 'Upload failed');
+      }
+
+      setStatus('✅ Upload Successful! Video sent for review.');
+      setStatusType('success');
+      showAlert('Upload Successful', 'Thank you! The video has been sent for review by Narjis Khatoon team.', 'success');
+      setWord('');
+    } catch (e) {
+      setStatus(`❌ ${e.message}`);
+      setStatusType('error');
+      showAlert('Upload Error', e.message, 'error');
+    } finally { setUploading(false); }
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 10 }]}>
-      <Header title="Contribute Video" showThemeToggle={false} />
+    <ScrollView contentContainerStyle={styles.mainScroll} showsVerticalScrollIndicator={false}>
+      <View style={styles.uploadBanner}>
+        <LinearGradient colors={theme.gradientPrimary} style={styles.bannerGrad}>
+          <FontAwesome5 name="hands-helping" size={48} color="#fff" />
+          <Text style={styles.bannerTitle}>Contribute Signs</Text>
+          <Text style={styles.bannerSub}>Partner with Narjis Khatoon Organization</Text>
+        </LinearGradient>
+      </View>
 
-      <GlassCard style={{ marginTop: 20 }}>
-        <View style={{ alignItems: 'center', marginBottom: 24 }}>
-          <GradientHeader style={styles.uploadIcon}>
-            <Ionicons name="cloud-upload" size={44} color="#fff" />
-          </GradientHeader>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>Upload Sign Video</Text>
-          <Text style={[styles.cardSub, { color: theme.subtext }]}>Help expand the {APP_CONFIG.organization} dictionary</Text>
-        </View>
-
-        <Text style={[styles.label, { color: theme.subtext }]}>WORD OR PHRASE</Text>
+      <GlassCard style={{ marginTop: 25, paddingBottom: 40 }}>
+        <Text style={[styles.label, { color: theme.text, marginBottom: 12 }]}>ENTER SIGN NAME</Text>
         <TextInput
-          style={[styles.input, { backgroundColor: theme.input, color: theme.text, borderColor: theme.inputBorder, height: 56 }]}
-          placeholder="e.g. Good Morning"
+          style={[styles.premiumInput, { color: theme.text, backgroundColor: theme.input, borderColor: theme.glassBorder, height: 60 }]}
+          placeholder="e.g. Beautiful"
           placeholderTextColor={theme.muted}
           value={word}
           onChangeText={setWord}
         />
-
-        {progress > 0 && (
-          <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
-            <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.primary }]} />
-          </View>
-        )}
-
-        <TouchableOpacity
-          onPress={pickAndUpload}
-          disabled={loading}
-          style={[styles.mainBtn, { backgroundColor: theme.secondary, marginTop: 20 }]}
-        >
-          {loading ? <ActivityIndicator color="#FFF" /> : (
-            <>
-              <Ionicons name="videocam" size={20} color="#fff" />
-              <Text style={styles.mainBtnText}>Select Video & Upload</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <PremiumButton title="Choose & Upload Video" icon="cloud-upload" color={theme.secondary} loading={uploading} onPress={handleUpload} style={{ marginTop: 30 }} />
       </GlassCard>
+
+      <GlassCard style={{ marginHorizontal: 20, marginTop: 15, padding: 15, alignItems: 'center', borderStyle: 'dotted', borderWidth: 1, borderColor: statusType === 'error' ? theme.error : statusType === 'success' ? theme.primary : theme.glassBorder }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Ionicons
+            name={statusType === 'success' ? 'checkmark-circle' : statusType === 'error' ? 'alert-circle' : 'information-circle'}
+            size={20}
+            color={statusType === 'error' ? theme.error : statusType === 'success' ? theme.primary : theme.subtext}
+          />
+          <Text style={[styles.statusBadgeText, { color: statusType === 'error' ? theme.error : theme.text, fontWeight: '700' }]}>{status}</Text>
+        </View>
+      </GlassCard>
+
+      {/* Informational Section */}
+      <GlassCard style={{ marginTop: 20, backgroundColor: theme.primary + '05' }}>
+        <Text style={[styles.label, { color: theme.primary }]}>SUBMISSION GUIDELINES</Text>
+        <Text style={[styles.infoSmall, { color: theme.subtext }]}>• Ensure clear lighting and a plain background.</Text>
+        <Text style={[styles.infoSmall, { color: theme.subtext }]}>• Keep the video under 5 seconds for single words.</Text>
+        <Text style={[styles.infoSmall, { color: theme.subtext }]}>• Uploaded videos undergo admin review before going live.</Text>
+        <Text style={[styles.infoSmall, { color: theme.subtext }]}>• Your contributions empower the deaf community!</Text>
+      </GlassCard>
+
+      <View style={{ height: 120 }} />
     </ScrollView>
   );
 }
 
-function AboutScreen() {
-  const { theme } = useTheme();
+function SettingsScreen() {
+  const { theme, isDark, setIsDark, deafMode, setDeafMode, autoTranslate, setAutoTranslate } = useApp();
   const insets = useSafeAreaInsets();
 
-  const techStack = ['React Native', 'Expo', 'FastAPI', 'AWS S3', 'Whisper AI', 'SQLite'];
-
   return (
-    <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 10 }]}>
-      <Header title="About" showThemeToggle={false} />
+    <ScrollView contentContainerStyle={styles.mainScroll} showsVerticalScrollIndicator={false}>
+      <Text style={[styles.sectionHeading, { color: theme.text }]}>Appearance</Text>
+      <GlassCard style={{ marginTop: 10 }}>
+        <Text style={[styles.settingTitle, { color: theme.text, marginBottom: 15 }]}>Theme Selection</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity
+            onPress={() => setIsDark(true)}
+            style={{
+              flex: 1,
+              paddingVertical: 14,
+              borderRadius: 16,
+              alignItems: 'center',
+              backgroundColor: isDark ? theme.primary : theme.input,
+              borderWidth: 2,
+              borderColor: isDark ? theme.primary : theme.glassBorder
+            }}
+          >
+            <Ionicons name="moon" size={22} color={isDark ? '#fff' : theme.subtext} />
+            <Text style={{
+              fontSize: 12,
+              fontWeight: '800',
+              marginTop: 6,
+              color: isDark ? '#fff' : theme.subtext
+            }}>Dark</Text>
+          </TouchableOpacity>
 
-      <GlassCard style={{ marginTop: 20 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-          <GradientHeader style={styles.logoBox}>
-            <Ionicons name="hand-left" size={28} color="#fff" />
-          </GradientHeader>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>{APP_CONFIG.organization}</Text>
-            <Text style={[styles.cardSub, { color: theme.subtext }]}>Skardu, Pakistan 🇵🇰</Text>
-          </View>
+          <TouchableOpacity
+            onPress={() => setIsDark(false)}
+            style={{
+              flex: 1,
+              paddingVertical: 14,
+              borderRadius: 16,
+              alignItems: 'center',
+              backgroundColor: !isDark ? theme.primary : theme.input,
+              borderWidth: 2,
+              borderColor: !isDark ? theme.primary : theme.glassBorder
+            }}
+          >
+            <Ionicons name="sunny" size={22} color={!isDark ? '#fff' : theme.subtext} />
+            <Text style={{
+              fontSize: 12,
+              fontWeight: '800',
+              marginTop: 6,
+              color: !isDark ? '#fff' : theme.subtext
+            }}>Light</Text>
+          </TouchableOpacity>
         </View>
-
-        <Text style={[styles.bodyText, { color: theme.subtext }]}>
-          <Text style={{ fontWeight: '700', color: theme.primary }}>EchoSign</Text> is an assistive technology project dedicated to{' '}
-          <Text style={{ fontWeight: '700', color: theme.secondary }}>Anita Bano</Text> and named after her daughter{' '}
-          <Text style={{ fontWeight: '700', color: theme.primary }}>Nargis Khatoon</Text>.
-        </Text>
-        <View style={{ height: 12 }} />
-        <Text style={[styles.bodyText, { color: theme.subtext }]}>
-          Our mission is to bridge the communication gap for the deaf community through advanced AI translation tools, providing equal opportunities in education.
-        </Text>
       </GlassCard>
 
-      <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 20 }]}>💻 Technology Stack</Text>
-      <View style={styles.tagContainer}>
-        {techStack.map((t, i) => (
-          <View key={i} style={[styles.tag, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}>
-            <Text style={{ color: theme.subtext, fontSize: 12, fontWeight: '600' }}>{t}</Text>
+      <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 25 }]}>Settings & Preferences</Text>
+      <GlassCard style={{ marginTop: 10 }}>
+        <View style={styles.settingItem}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingTitle, { color: theme.text }]}>Deaf-Friendly Mode</Text>
+            <Text style={[styles.settingSub, { color: theme.subtext }]}>Larger fonts and higher contrast for better accessibility.</Text>
           </View>
-        ))}
-      </View>
-
-      <GlassCard style={{ marginTop: 20 }}>
-        <Text style={[styles.cardTitle, { color: theme.text, fontSize: 16 }]}>📱 App Version</Text>
-        <Text style={[styles.cardSub, { color: theme.subtext }]}>{APP_CONFIG.version}</Text>
+          <Switch value={deafMode} onValueChange={setDeafMode} trackColor={{ true: theme.primary }} />
+        </View>
+        <View style={[styles.divider, { backgroundColor: theme.glassBorder }]} />
+        <View style={styles.settingItem}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingTitle, { color: theme.text }]}>Auto-Translate</Text>
+            <Text style={[styles.settingSub, { color: theme.subtext }]}>Instantly translate voice commands without manual review.</Text>
+          </View>
+          <Switch value={autoTranslate} onValueChange={setAutoTranslate} trackColor={{ true: theme.primary }} />
+        </View>
       </GlassCard>
+
+      <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 25 }]}>Software Update</Text>
+      <GlassCard style={{ marginTop: 10 }}>
+        <View style={styles.aboutRow}>
+          <Text style={[styles.aboutTitle, { color: theme.primary }]}>App Version</Text>
+          <Text style={[styles.aboutText, { color: theme.text }]}>{APP_CONFIG.version}</Text>
+        </View>
+        <View style={[styles.divider, { backgroundColor: theme.glassBorder }]} />
+        <SoftwareUpdateComponent theme={theme} isDark={isDark} />
+      </GlassCard>
+
+      <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 25 }]}>About the Project</Text>
+      <GlassCard style={{ marginTop: 10 }}>
+        <View style={styles.aboutRow}>
+          <Text style={[styles.aboutTitle, { color: theme.primary }]}>Narjis Khatoon Organization</Text>
+          <Text style={[styles.aboutText, { color: theme.text }]}>
+            EchoSign is a flagship assistive technology project dedicated to the deaf community in Pakistan. Managed by the Narjis Khatoon Organization, we bridge the communication gap using AI-powered Sign Language Interpretation.
+          </Text>
+        </View>
+        <View style={[styles.divider, { backgroundColor: theme.glassBorder }]} />
+        <View style={styles.aboutRow}>
+          <Text style={[styles.aboutTitle, { color: theme.primary }]}>Version {APP_CONFIG.version}</Text>
+          <Text style={[styles.aboutText, { color: theme.text }]}>
+            Developed with ❤️ specifically for Narjis Khatoon Organization. This app is part of our commitment to making Pakistan more accessible for everyone.
+          </Text>
+        </View>
+      </GlassCard>
+
+      <View style={{ height: 120 }} />
     </ScrollView>
   );
 }
@@ -547,130 +869,302 @@ function AboutScreen() {
 // ========== NAVIGATION ==========
 
 function Navigation() {
-  const [tab, setTab] = useState('home');
-  const { theme } = useTheme();
+  const [activeTab, setActiveTab] = useState('home');
+  const { theme } = useApp();
   const insets = useSafeAreaInsets();
 
   const tabs = [
-    { id: 'home', icon: 'home', label: 'Home' },
-    { id: 'upload', icon: 'cloud-upload', label: 'Upload' },
-    { id: 'about', icon: 'information-circle', label: 'About' }
+    { id: 'home', icon: 'swap-horizontal', label: 'Translate' },
+    { id: 'upload', icon: 'cloud-upload', label: 'Contribute' },
+    { id: 'settings', icon: 'information-circle', label: 'About' }
   ];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.statusBarBg} />
-      <View style={{ flex: 1 }}>
-        {tab === 'home' && <HomeScreen />}
-        {tab === 'upload' && <UploadScreen />}
-        {tab === 'about' && <AboutScreen />}
-      </View>
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 10 : 0 }}>
+          <Header />
+        </View>
 
-      <View style={[styles.navBar, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 8, borderTopColor: theme.border }]}>
-        {tabs.map(item => {
-          const isActive = tab === item.id;
-          return (
-            <TouchableOpacity
-              key={item.id}
-              onPress={() => setTab(item.id)}
-              style={styles.navItem}
-              accessibilityLabel={item.label}
-            >
-              <Ionicons
-                name={isActive ? item.icon : `${item.icon}-outline`}
-                size={24}
-                color={isActive ? theme.primary : theme.subtext}
-              />
-              <Text style={[styles.navLabel, { color: isActive ? theme.primary : theme.subtext }]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 50}
+        >
+          <View style={{ flex: 1 }}>
+            {activeTab === 'home' && <HomeScreen />}
+            {activeTab === 'upload' && <ContributeScreen />}
+            {activeTab === 'settings' && <SettingsScreen />}
+          </View>
+          <NetworkIndicator />
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+
+      <View style={[styles.navContainer, { backgroundColor: theme.surfaceSolid, paddingBottom: insets.bottom + 8, borderTopColor: theme.glassBorder }]}>
+        {tabs.map(t => (
+          <TouchableOpacity key={t.id} onPress={() => { LayoutAnimation.easeInEaseOut(); setActiveTab(t.id); }} style={styles.navItem}>
+            <Ionicons name={activeTab === t.id ? t.icon : t.icon + "-outline"} size={26} color={activeTab === t.id ? theme.primary : theme.subtext} />
+            <Text style={[styles.navText, { color: activeTab === t.id ? theme.primary : theme.subtext }]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
     </View>
   );
 }
 
-// ========== APP ENTRY ==========
+const PremiumSplash = ({ onFinish, theme }) => {
+  const scaleAnim = useRef(new Animated.Value(0.3)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
-export default function App() {
-  const [isDark, setIsDark] = useState(true);
-  const theme = isDark ? themes.dark : themes.light;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 10,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.delay(1200),
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 1.5,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(() => onFinish());
+  }, []);
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme: () => setIsDark(!isDark), theme }}>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim, alignItems: 'center' }}>
+        <Text style={{ fontSize: 44, fontWeight: '999', color: '#fff', letterSpacing: -2 }}>
+          Echo<Text style={{ color: theme.primary }}>Sign</Text>
+        </Text>
+        <View style={{ height: 2, width: 40, backgroundColor: theme.primary, marginVertical: 15 }} />
+        <Text style={{ fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5, textAlign: 'center' }}>
+          Narjis Khatoon Organization
+        </Text>
+      </Animated.View>
+    </View>
+  );
+};
+
+export default function App() {
+  const [isDark, setIsDarkState] = useState(true); // Default to Dark
+  const [deafMode, setDeafMode] = useState(true);
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info' });
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const contentFade = useRef(new Animated.Value(0)).current;
+  const contentY = useRef(new Animated.Value(40)).current;
+
+  // Load saved theme preference on app start
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(THEME_FILE);
+        if (fileInfo.exists) {
+          const content = await FileSystem.readAsStringAsync(THEME_FILE);
+          const savedData = JSON.parse(content);
+          if (typeof savedData.isDark === 'boolean') {
+            setIsDarkState(savedData.isDark);
+          }
+        }
+      } catch (e) {
+        console.log('Error loading theme:', e);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+    loadTheme();
+  }, []);
+
+  // Save theme preference when it changes
+  const setIsDark = async (value) => {
+    setIsDarkState(value);
+    try {
+      await FileSystem.writeAsStringAsync(THEME_FILE, JSON.stringify({ isDark: value }));
+    } catch (e) {
+      console.log('Error saving theme:', e);
+    }
+  };
+
+  const theme = isDark ? themes.dark : themes.light;
+
+  const showAlert = (title, message, type = 'info') => {
+    setAlertConfig({ visible: true, title, message, type });
+  };
+
+  return (
+    <AppContext.Provider value={{
+      isDark, setIsDark,
+      deafMode, setDeafMode,
+      autoTranslate, setAutoTranslate,
+      showAlert,
+      theme
+    }}>
       <SafeAreaProvider>
-        <Navigation />
+        {showSplash ? (
+          <PremiumSplash theme={theme} onFinish={() => {
+            setShowSplash(false);
+            Animated.parallel([
+              Animated.timing(contentFade, {
+                toValue: 1,
+                duration: 800,
+                useNativeDriver: true,
+              }),
+              Animated.spring(contentY, {
+                toValue: 0,
+                tension: 20,
+                friction: 8,
+                useNativeDriver: true,
+              })
+            ]).start();
+          }} />
+        ) : null}
+
+        <Animated.View style={{ flex: 1, opacity: contentFade, transform: [{ translateY: contentY }] }}>
+          <Navigation />
+        </Animated.View>
+
+        <PremiumModal
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+        />
       </SafeAreaProvider>
-    </ThemeContext.Provider>
+    </AppContext.Provider>
   );
 }
 
-// ========== STYLES ==========
-
 const styles = StyleSheet.create({
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  headerTitle: { fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 13, marginTop: 4, fontWeight: '500' },
-  themeToggle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  mainScroll: { paddingHorizontal: 20, paddingBottom: 20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  brandText: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+  orgText: { fontSize: 13, fontWeight: '700', opacity: 0.8 },
+  iconCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
-  gradientHeader: { borderRadius: 20, padding: 16, alignItems: 'center', justifyContent: 'center' },
-  glassCard: { borderRadius: 24, borderWidth: 1, marginBottom: 16 },
+  glassCard: { borderRadius: 28, borderWidth: 1, marginBottom: 16, overflow: 'hidden' },
 
-  section: { marginBottom: 16 },
-  videoContainer: { width: '100%', aspectRatio: 16 / 9, borderRadius: 24, overflow: 'hidden', borderWidth: 2, backgroundColor: '#000' },
-  video: { width: '100%', height: '100%' },
-  videoPlaceholder: { width: '100%', aspectRatio: 16 / 9, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderStyle: 'dashed', overflow: 'hidden' },
-  playIcon: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  placeholderText: { fontSize: 14, fontWeight: '500' },
+  playerContainer: { marginBottom: 10 },
+  videoFrame: { width: '100%', aspectRatio: 16 / 9, borderRadius: 24, overflow: 'hidden', borderWidth: 2, backgroundColor: '#000' },
+  fullVideo: { width: '100%', height: '100%' },
+  videoOverlay: { position: 'absolute', bottom: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.65)', padding: 10, borderRadius: 14 },
+  overlayType: { color: '#fff', fontSize: 9, fontWeight: '900', opacity: 0.8, letterSpacing: 1 },
+  overlayWord: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 2 },
 
-  controlBar: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  videoType: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 2 },
-  videoWord: { fontSize: 17, fontWeight: '900', textTransform: 'capitalize' },
-  controlBtns: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  controlBtn: { padding: 8 },
-  playPauseBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  videoCount: { fontSize: 12, fontWeight: '700', marginLeft: 12 },
+  playerPlaceholder: { width: '100%', borderRadius: 24, borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  placeholderSub: { marginTop: 15, fontSize: 14, fontWeight: '700' },
 
-  statusBarCard: { flexDirection: 'row', alignItems: 'center' },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-  statusText: { fontSize: 14, fontWeight: '600' },
-  clearBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  clearBtnText: { fontSize: 12, fontWeight: '700' },
+  playerControls: { marginTop: 10 },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  ctrlBtn: { padding: 8 },
+  centralPlayBtn: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginHorizontal: 15 },
+  counterBox: { alignItems: 'center', marginTop: 8 },
+  counterText: { fontSize: 13, fontWeight: '800' },
 
-  keywordRow: { marginBottom: 16, marginTop: 4 },
-  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, marginRight: 10, borderWidth: 1 },
-  chipText: { fontSize: 13, fontWeight: '700' },
+  seekContainer: { paddingHorizontal: 10 },
+  seekBackground: { height: 4, borderRadius: 2, width: '100%', overflow: 'hidden' },
+  seekFill: { height: '100%', borderRadius: 2 },
+  seekHandleRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  inputCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  statusBadge: {
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(0,0,0,0.05)'
+  },
+  statusBadgeText: { fontSize: 12, fontWeight: '600' },
 
-  favSection: { marginBottom: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
-  favChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, marginRight: 10, borderWidth: 1 },
-  favText: { fontSize: 13, fontWeight: '600' },
+  resultsCard: { padding: 18, marginVertical: 5 },
+  label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 10 },
+  sentenceBox: { marginBottom: 15 },
+  sentenceText: { fontWeight: '700', lineHeight: 26 },
+  keywordBox: { marginTop: 5 },
+  keywordScroll: { flexDirection: 'row' },
+  keywordChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 15, marginRight: 10, borderWidth: 1 },
+  keywordChipText: { fontWeight: '800', fontSize: 12 },
 
-  transcriptionCard: { marginTop: 4 },
-  cardLabel: { fontSize: 11, fontWeight: '700', marginBottom: 8, letterSpacing: 1 },
-  cardText: { fontSize: 16, lineHeight: 24 },
-  cardTitle: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  cardSub: { fontSize: 13 },
+  inputCard: { padding: 22 },
+  premiumInput: { borderRadius: 20, padding: 18, minHeight: 90, borderWidth: 1, textAlignVertical: 'top' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 18 },
+  micBtn: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
 
-  inputContainer: { padding: 20 },
-  input: { borderRadius: 16, padding: 16, fontSize: 16, minHeight: 56, borderWidth: 1 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
-  recordBtn: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
-  mainBtn: { flex: 1, height: 56, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  mainBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  premiumBtn: { borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  btnContent: { flexDirection: 'row', alignItems: 'center' },
+  btnIcon: { marginRight: 8 },
+  btnText: { color: '#fff', fontWeight: '900' },
 
-  uploadIcon: { width: 88, height: 88, borderRadius: 28, marginBottom: 16 },
-  label: { fontSize: 11, fontWeight: '700', marginBottom: 10, letterSpacing: 1 },
-  progressBar: { height: 6, borderRadius: 3, marginTop: 16, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 3 },
+  uploadBanner: { borderRadius: 28, overflow: 'hidden' },
+  bannerGrad: { padding: 30, alignItems: 'center' },
+  bannerTitle: { color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 10 },
+  bannerSub: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600', textAlign: 'center' },
 
-  logoBox: { width: 56, height: 56, borderRadius: 18 },
-  bodyText: { fontSize: 14, lineHeight: 22 },
-  tagContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tag: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
+  infoSmall: { fontSize: 12, fontWeight: '600', marginBottom: 6, lineHeight: 18 },
 
-  navBar: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 14, borderTopWidth: 1 },
-  navItem: { alignItems: 'center' },
-  navLabel: { fontSize: 11, fontWeight: '600', marginTop: 4 }
+  sectionHeading: { fontSize: 20, fontWeight: '800', marginBottom: 15 },
+  settingItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18 },
+  settingTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  settingSub: { fontSize: 13, opacity: 0.7, lineHeight: 18 },
+  divider: { height: 1, width: '100%' },
+
+  aboutRow: { paddingVertical: 15 },
+  aboutTitle: { fontSize: 15, fontWeight: '900', marginBottom: 8 },
+  aboutText: { fontSize: 14, lineHeight: 22, fontWeight: '500' },
+  networkBanner: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    zIndex: 1000,
+  },
+  networkText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+
+  navContainer: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 14, borderTopWidth: 1 },
+  navItem: { alignItems: 'center', flex: 1 },
+  navText: { fontSize: 10, fontWeight: '800', marginTop: 4 },
+
+  modalOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.82)' },
+  modalContent: { width: '100%', borderRadius: 32, padding: 30, alignItems: 'center', borderWidth: 1, overflow: 'hidden' },
+  modalHeaderGrad: { position: 'absolute', top: 0, left: 0, right: 0, height: 150 },
+  modalIconBox: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 24, fontWeight: '900', marginBottom: 12, textAlign: 'center' },
+  modalMessage: { fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 30, opacity: 0.8 },
+  modalBtn: { width: '100%', height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  modalBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' }
 });
